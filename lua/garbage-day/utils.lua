@@ -13,7 +13,7 @@ function M.stop_lsp()
 
     -- Stop lsp client
     if not is_lsp_client_excluded then
-      vim.lsp.stop_client(client.id)
+      client.stop()
       client.rpc.terminate()
     end
   end
@@ -39,7 +39,9 @@ function M.start_lsp()
     end
 
     -- Start LSP
-    vim.cmd(":LspStart")
+    for _, client in pairs(vim.lsp.get_clients({ bufnr = 0 })) do
+      vim.lsp.enable(client.name)
+    end
 
     -- Start null-ls
     local is_null_ls_excluded = vim.tbl_contains(
