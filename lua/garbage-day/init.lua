@@ -40,13 +40,8 @@ function M.setup(opts)
       wakeup_delay_counting = false -- reset wakeup_delay state
 
       -- Start counting
-      timer:start(1000, 1000, vim.schedule_wrap(function()
-        -- Update timer state
-        current_time = os.time()
-        elapsed_time = current_time - start_time
-        grace_period_exceeded = elapsed_time >= config.grace_period
-        -- Grace period exceeded? Stop LSP
-        if grace_period_exceeded and not lsp_has_been_stopped then
+      timer:start(config.grace_period * 1000, 0, vim.schedule_wrap(function()
+        if not lsp_has_been_stopped then
           timer:stop()
           utils.stop_lsp()
           if config.notifications then utils.notify("lsp_has_stopped") end
