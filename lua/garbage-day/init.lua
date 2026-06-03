@@ -64,6 +64,8 @@ function M.setup(opts)
           if lsp_has_been_stopped then
             utils.start_lsp()
             if config.notifications then utils.notify("lsp_has_started") end
+          else
+            timer:stop()
           end
 
           -- Reset state
