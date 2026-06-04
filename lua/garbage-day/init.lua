@@ -20,14 +20,9 @@ local M = {}
 local utils = require("garbage-day.utils")
 
 local timer = vim.uv.new_timer() -- Can store ~29377 years
-local start_time = os.time()
-local current_time = 0
-local elapsed_time = 0
 
-local grace_period_exceeded = false
 local lsp_has_been_stopped = false
 local wakeup_delay_counting = false
-
 
 --- Entry point of the program
 function M.setup(opts)
@@ -69,10 +64,6 @@ function M.setup(opts)
           end
 
           -- Reset state
-          start_time = os.time()
-          current_time = 0
-          elapsed_time = 0
-          grace_period_exceeded = false
           lsp_has_been_stopped = false
         end
       end, config.wakeup_delay)
