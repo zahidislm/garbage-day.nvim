@@ -41,13 +41,6 @@ function M.start_lsp()
       vim.lsp.enable(client.name)
     end
 
-    -- Start null-ls
-    local is_null_ls_excluded =
-      vim.tbl_contains(config.excluded_lsp_clients, "null-ls")
-    if not is_null_ls_excluded then
-      pcall(function() require("null-ls").enable({}) end)
-    end
-
     elapsed_retries = elapsed_retries + 1
 
     -- Schedule the next trigger
