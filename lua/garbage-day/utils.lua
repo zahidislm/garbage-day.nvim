@@ -1,6 +1,7 @@
 local M = {}
 
 local config = vim.g.garbage_day_config
+local stopped_clients_cache = {}
 local start_timer = vim.uv.new_timer()
 
 -- CORE UTILS
