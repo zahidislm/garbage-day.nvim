@@ -12,7 +12,6 @@ function M.stop_lsp()
   for _, client in pairs(vim.lsp.get_clients()) do
     if not vim.tbl_contains(config.excluded_lsp_clients, client.name) then
       stopped_clients_cache[client.name] = true
-      pcall(vim.lsp.enable, client.name, false)
       client:stop(true)
     end
   end
