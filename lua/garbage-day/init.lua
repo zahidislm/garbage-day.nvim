@@ -68,6 +68,8 @@ function M.setup(opts)
   vim.api.nvim_create_autocmd("BufEnter", {
     callback = function(args)
       local config = vim.g.garbage_day_config
+      if not config.aggressive_mode then return end
+
       local new_ft = vim.bo[args.buf].filetype
       local new_buftype = vim.bo[args.buf].buftype
 
@@ -79,7 +81,7 @@ function M.setup(opts)
 
       -- In aggressive_mode, purge stale LSP clients on filetype change.
       -- Neovim's FileType autocmds will auto-start the right clients for the new buffer.
-      if ft_changed and config.aggressive_mode then
+      if ft_changed then
         vim.defer_fn(function()
           utils.stop_lsp()
           utils.start_lsp()
