@@ -12,8 +12,7 @@ function M.stop_lsp()
 
     -- Stop lsp client
     if not is_lsp_client_excluded then
-      client:stop()
-      client.rpc.terminate()
+      client:stop(true)
     end
   end
 end
