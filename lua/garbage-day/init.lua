@@ -15,81 +15,99 @@
 -- --------------------------------------------------------------------------
 
 local M = {}
-local utils = require("garbage-day.utils")
 
-local timer = vim.uv.new_timer()
-local lsp_has_been_stopped = false
-local wakeup_delay_counting = false
+local lsp = require("garbage-day.lsp")
 
---- Entry point
+local grace_timer = assert(vim.uv.new_timer())
+local debounce_timer = assert(vim.uv.new_timer())
+
+local state = { stopped = false, waking_up = false }
+
+---@return GarbageDay.Config
+local function cfg()
+  return vim.g.garbage_day_config
+end
+
+function M.on_focus_lost()
+  state.waking_up = false
+
+  grace_timer:start(
+    cfg().grace_period * 1000, 0,
+    vim.schedule_wrap(function ()
+      if not state.stopped then
+        lsp.stop()
+        state.stopped = true
+      end
+    end)
+  )
+end
+
+function M.on_focus_gained()
+  state.waking_up = true
+
+  vim.defer_fn(function ()
+    if not state.waking_up then
+      return -- focus was lost again before the delay elapsed
+    end
+
+    if state.stopped then
+      lsp.start()
+    else
+      grace_timer:stop() -- grace period was still running; cancel it
+    end
+
+    state.stopped = false
+  end, cfg().wakeup_delay)
+end
+
+---@type string
+local current_filetype
+
+function M.on_buf_enter(args)
+  local c = cfg()
+  if not c.aggressive_mode then
+    return
+  end
+
+  local ft = vim.bo[args.buf].filetype
+  local buftype = vim.bo[args.buf].buftype
+  if vim.tbl_contains(c.aggressive_mode_ignore.filetype, ft) then
+    return
+  end
+  if vim.tbl_contains(c.aggressive_mode_ignore.buftype, buftype) then
+    return
+  end
+
+  local changed = ft ~= current_filetype
+  current_filetype = ft
+  if not changed then
+    return
+  end
+
+  -- Debounced: rapid buffer cycling (`:bn` held down, fuzzy-finder
+  -- previews) should purge once, not once per intermediate buffer.
+  debounce_timer:start(
+    100, 0,
+    vim.schedule_wrap(function ()
+      lsp.stop({ only_hidden = true })
+      lsp.start()
+    end)
+  )
+end
+
+function M.on_vim_leave()
+  for _, timer in ipairs({ grace_timer, debounce_timer }) do
+    if not timer:is_closing() then
+      timer:stop()
+      timer:close()
+    end
+  end
+end
+
+---@param opts? table
 function M.setup(opts)
   require("garbage-day.config").set(opts)
-
-  -- Focus lost
-  vim.api.nvim_create_autocmd("FocusLost", {
-    callback = function()
-      local config = vim.g.garbage_day_config
-      wakeup_delay_counting = false  -- reset wakeup guard
-
-      timer:start(config.grace_period * 1000, 0, vim.schedule_wrap(function()
-        if not lsp_has_been_stopped then
-          timer:stop()
-          utils.stop_lsp()
-          if config.notifications then utils.notify("lsp_has_stopped") end
-          lsp_has_been_stopped = true
-        end
-      end))
-    end,
-  })
-
-  -- Focus gained
-  vim.api.nvim_create_autocmd("FocusGained", {
-    callback = function()
-      local config = vim.g.garbage_day_config
-      wakeup_delay_counting = true
-
-      vim.defer_fn(function()
-        if not wakeup_delay_counting then return end  -- user left before delay elapsed
-
-        if lsp_has_been_stopped then
-          utils.start_lsp()
-          if config.notifications then utils.notify("lsp_has_started") end
-        else
-          timer:stop()  -- grace period still running; cancel it
-        end
-
-        lsp_has_been_stopped = false
-      end, config.wakeup_delay)
-    end,
-  })
-
-  -- Buffer entered (aggressive_mode)
-  local current_filetype = vim.bo.filetype
-  vim.api.nvim_create_autocmd("BufEnter", {
-    callback = function(args)
-      local config = vim.g.garbage_day_config
-      if not config.aggressive_mode then return end
-
-      local new_ft = vim.bo[args.buf].filetype
-      local new_buftype = vim.bo[args.buf].buftype
-
-      if vim.tbl_contains(config.aggressive_mode_ignore.filetype, new_ft) then return end
-      if vim.tbl_contains(config.aggressive_mode_ignore.buftype, new_buftype) then return end
-
-      local ft_changed = new_ft ~= current_filetype
-      current_filetype = new_ft
-
-      -- In aggressive_mode, purge stale LSP clients on filetype change.
-      -- Neovim's FileType autocmds will auto-start the right clients for the new buffer.
-      if ft_changed then
-        vim.defer_fn(function()
-          utils.stop_lsp()
-          utils.start_lsp()
-          if config.notifications then utils.notify("lsp_has_stopped") end
-        end, 100)
-      end
-    end,
-  })
+  current_filetype = vim.bo.filetype
 end
 
 return M

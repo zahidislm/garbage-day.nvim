@@ -10,23 +10,29 @@ Garbage collector that stops inactive LSP clients to free RAM
 </div>
 
 ## Why
-In many scenarios, unmanaged LSP clients running on background can take several Gb of RAM. So I wrote this LSP garbage collector for [NormalNvim](https://github.com/NormalNvim/NormalNvim) to auto free it. But you can use it on any distro.
+In many scenarios, unmanaged LSP clients running on background can take several Gb of RAM. So [zeioth](httpss://github.com/zeioth/garbage-day.nvim) wrote this LSP garbage collector for [NormalNvim](https://github.com/NormalNvim/NormalNvim) to auto free it. I have re-written major parts of it to modernize it for neovim >= 0.12
 
 ## How to setup
-Add this to lazy
+Add this via `lazy.nvim`
 
 ```lua
 {
-  "zeioth/garbage-day.nvim",
+  "zahidislm/garbage-day.nvim",
   event = "VeryLazy",
   opts = {
     -- your options here
   }
 },
 ```
+Or via `vim.pack`
 
-We also support changing opts on execution time like `:let g:garbage_day_config['option']='value'
-`
+```lua
+vim.pack.add("https://github.com/zahidislm/garbage-day.nvim")
+require("garbage-day").setup({ ... })
+```
+
+We also support changing opts on execution time like `:let g:garbage_day_config['option']='value'`
+
 
 ## Available options
 
@@ -48,21 +54,16 @@ You can tweak them in case some particular LSP client don't start/stop correctly
 | `timeout` | `1000` | Milliseconds that will take for `retries` to complete. Example: by default we try 3 retries for 1000ms. |
 
 
-IMPORTANT: If you change the default values, make sure the value of `grace_period` is always bigger than `timeout`/1000. This ensures you are leaving enough time between `stop_lsp()`/`start_lsp()`, so they don't overlap.
+IMPORTANT: If you change the default values, make sure the value of `grace_period` is always bigger than `timeout`/1000. This ensures you are leaving enough time between `stop()`/`start()`, so they don't overlap.
 
 ## FAQ
 
-* `If it doesn't work` This plugin has been tested with neovim 0.10 and 0.11. If you are in a neovim version superior to nvim 0.11, and it doesn't work, please [open a issue tagging me](https://github.com/Zeioth/garbage-day.nvim/issues) and I will fix it.
 * `Can I manually trigger garbage collection?` Yes, you can do it like
 ```lua
-require("garbage-day.utils").stop_lsp()  -- stop all lsp clients.
-require("garbage-day.utils").start_lsp() -- start lsp clients for the current buffer.
+require("garbage-day.lsp").stop()  -- stop all lsp clients.
+require("garbage-day.lsp").start() -- start lsp clients for the current buffer.
 ```
   
-## 🌟 Support the project
-If you want to help me, please star this repository to increase the visibility of the project.
-
-[![Stargazers over time](https://starchart.cc/Zeioth/garbage-day.nvim.svg)](https://starchart.cc/Zeioth/garbage-day.nvim)
 
 ## Where do that cheesy name come from?
 * [It comes from the beloved meme](https://knowyourmeme.com/memes/garbage-day)
