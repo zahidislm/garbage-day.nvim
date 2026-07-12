@@ -1,0 +1,234 @@
+*garbage-day.nvim* LSP garbage collector
+
+GPLv3 License Copyright (C) zahidislm
+
+------------------------------------------------------------------------------
+*GarbageDay*
+Key design ideas:
+- Automatically stop inactive Neovim LSP clients to free up system memory,
+    restarting them transparently once they are needed again.
+    - Managing LSP clients is done using Neovim's built-in |vim.lsp.enable()|
+    as much as possible, instead of killing client processes directly.
+
+    Features:
+    - Focus-based garbage collection:
+    - When Neovim loses focus (|FocusLost|), a `grace_period` timer starts.
+    If focus is not regained before it elapses, all non-excluded LSP
+    clients are stopped via |GarbageDay.lsp.stop()|.
+    - When Neovim regains focus (|FocusGained|), stopped clients are
+    restarted via |GarbageDay.lsp.start()|, after an optional
+    `wakeup_delay` (useful to avoid waking clients up by accident when
+      	    the mouse merely passes over the Neovim window).
+    - Aggressive mode:
+    - When `aggressive_mode` is enabled, entering a buffer with a
+    different |filetype| than the previous one stops every LSP client
+    that is not visible in another window, then restarts what the new
+    buffer needs. This keeps only the client(s) relevant to the buffer
+    you are looking at running, for maximum RAM savings.
+    - The check is debounced, so rapidly cycling through buffers (holding
+      	    down `:bn`, fuzzy-finder previews, etc.) only triggers one purge
+    instead of one per intermediate buffer.
+    - Specific filetypes and buftypes can be ignored via
+    `aggressive_mode_ignore`.
+    - Exclusions: specific LSP client names (by `client.name`) can be excluded
+    from garbage collection entirely via `excluded_lsp_clients`. Useful for
+    clients that are slow to start or that should always stay running (for
+  	    example `copilot`).
+    - Optional notifications (via |vim.notify()|) whenever clients are stopped
+    or restarted.
+
+    What it doesn't do:
+    - It does not configure or install LSP servers. Use `nvim-lspconfig` or
+    `mason.nvim` for that.
+    - It does not forcefully kill processes outside of Neovim's standard
+    |vim.lsp.enable()| shutdown procedure.
+
+# Setup ~
+
+    This plugin needs a setup with `require('garbage-day').setup({})`
+    (replace `{}` with your `config` table). This stores the resolved config
+    in `vim.g.garbage_day_config`, and the autocommands defined in
+    `plugin/garbage-day.lua` take care of the rest automatically.
+
+    See |GarbageDay.config| for `config` structure and default values.
+
+    You can also change options at runtime, for example: >vim
+    :let g:garbage_day_config['grace_period'] = 60 * 5
+    <
+# Notes ~
+
+    - Some LSP clients (like `rust_analyzer` or `tsserver`/`ts_ls`) can consume
+    gigabytes of RAM. `garbage-day.nvim` is most useful for users who keep
+    many Neovim projects and buffers open simultaneously.
+    - If a particular client feels slow or unreliable to restart on your
+    machine, add it to `excluded_lsp_clients` rather than fighting the
+    garbage collector.
+    - `aggressive_mode` ignores `grace_period` entirely: it reacts immediately
+    to |BufEnter|, not to focus changes.
+
+# Disabling ~
+
+    To disable, either avoid calling |GarbageDay.setup()|, or don't load the
+    plugin at all via your plugin manager / `vim.pack`.
+
+    ------------------------------------------------------------------------------
+    *GarbageDay.setup()*
+    `require('garbage-day').setup`({config})
+    Module setup
+
+    Registers the plugin's config. Autocommands are already created by
+    `plugin/garbage-day.lua` on plugin load, so calling this is only about
+    supplying your own settings; the plugin works with defaults even without
+    ever calling `setup()`.
+
+    Parameters ~
+{config} `(table|nil)` Module config table. See |GarbageDay.config|.
+
+Usage ~
+>lua
+require('garbage-day').setup() -- use default config
+-- OR
+require('garbage-day').setup({}) -- replace {} with your config table
+<
+------------------------------------------------------------------------------
+*GarbageDay.config*
+`vim.g.garbage_day_config`
+Defaults ~
+>lua
+{
+    -- Set to `true` to stop all LSP clients except the current buffer's,
+    	-- every time you enter a buffer with a different `filetype` than the
+    	    -- previous one. Ignores `grace_period`. Ensures maximum RAM savings.
+    	    aggressive_mode = false,
+
+    	-- Buffers to skip when `aggressive_mode` is enabled.
+    	    aggressive_mode_ignore = {
+      		filetype = { "", "markdown", "text", "org", "tex", "asciidoc", "rst" },
+      		buftype = { "nofile" },
+    	    },
+
+    	-- LSP client names (`client.name`) that should never be stopped.
+    	    -- Useful for clients that misbehave when restarted.
+    	    excluded_lsp_clients = { "null-ls", "jdtls", "marksman", "lua_ls", "copilot" },
+
+    	-- Seconds to wait, after Neovim loses focus, before stopping all
+    	    -- non-excluded LSP clients. Default: 15 minutes.
+    	    grace_period = 60 * 15,
+
+    	-- Set to `true` to get a `vim.notify()` message every time LSP
+    	    -- clients are stopped or restarted.
+    	    notifications = false,
+
+    	-- Milliseconds to wait, after Neovim regains focus, before restarting
+    	    -- stopped LSP clients. Useful to avoid waking clients up by accident
+    	    -- when the mouse merely passes over the Neovim window.
+    	    wakeup_delay = 0,
+}
+<
+IMPORTANT: if you raise `wakeup_delay` significantly, keep `grace_period`
+comfortably larger than it, so a stop and the following start don't race
+each other.
+
+------------------------------------------------------------------------------
+*GarbageDay.on_focus_lost()*
+`require('garbage-day').on_focus_lost`()
+Handler for the |FocusLost| event
+
+Starts (or restarts) the `grace_period` timer. If Neovim's focus is not
+regained before the timer elapses, all non-excluded LSP clients are
+stopped via |GarbageDay.lsp.stop()|.
+
+No need to call this directly: it is wired up to |FocusLost| in
+`plugin/garbage-day.lua`.
+
+------------------------------------------------------------------------------
+*GarbageDay.on_focus_gained()*
+`require('garbage-day').on_focus_gained`()
+Handler for the |FocusGained| event
+
+Waits `config.wakeup_delay` milliseconds and, provided focus was not lost
+again in the meantime, either restarts previously stopped LSP clients via
+|GarbageDay.lsp.start()|, or cancels a still-pending grace-period timer if
+no clients had been stopped yet.
+
+No need to call this directly: it is wired up to |FocusGained| in
+`plugin/garbage-day.lua`.
+
+------------------------------------------------------------------------------
+*GarbageDay.on_buf_enter()*
+`require('garbage-day').on_buf_enter`({args})
+Handler for the |BufEnter| event
+
+Only acts when `config.aggressive_mode` is `true`. When the entered
+buffer's `filetype` differs from the previously entered buffer's, and
+neither its `filetype` nor `buftype` is listed in
+`config.aggressive_mode_ignore`, (debounced) stops every LSP client that
+isn't visible in another window, then restarts what the current buffer
+needs.
+
+No need to call this directly: it is wired up to |BufEnter| in
+`plugin/garbage-day.lua`.
+
+Parameters ~
+{args} `(table)` Autocommand callback arguments, as passed by Neovim.
+
+------------------------------------------------------------------------------
+*GarbageDay.on_vim_leave()*
+`require('garbage-day').on_vim_leave`()
+Handler for the |VimLeavePre| event
+
+Stops and closes the internal grace-period and debounce timers so Neovim
+can exit cleanly.
+
+No need to call this directly: it is wired up to |VimLeavePre| in
+`plugin/garbage-day.lua`.
+
+------------------------------------------------------------------------------
+*GarbageDay.lsp.stop()*
+`require('garbage-day.lsp').stop`({opts})
+Stop LSP clients
+
+Stops every currently running LSP client (including ones attached to
+	buffers in other tabs and windows) whose name is not listed in
+`config.excluded_lsp_clients`, via |vim.lsp.enable()|. Remembers which
+clients it stopped so |GarbageDay.lsp.start()| can restart exactly those.
+
+If `config.notifications` is `true`, notifies once per call (not once per
+	client) when at least one client was stopped.
+
+Parameters ~
+{opts} `(table|nil)` Options. Possible fields:
+- <only_hidden> `(boolean)` - if `true`, skip clients that are still
+visible in some window. Used by `aggressive_mode` so switching between
+splits showing different filetypes doesn't tear down the LSP client
+for the split you aren't currently looking at. Default: `false`.
+
+Usage ~
+>lua
+require('garbage-day.lsp').stop() -- stop all non-excluded LSP clients
+<
+------------------------------------------------------------------------------
+*GarbageDay.lsp.start()*
+`require('garbage-day.lsp').start`()
+Restart LSP clients
+
+Re-enables, via |vim.lsp.enable()|, every LSP client previously stopped by
+|GarbageDay.lsp.stop()|. Does nothing if no clients are currently stopped.
+
+If `config.notifications` is `true`, notifies once when clients are
+restarted.
+
+Usage ~
+>lua
+require('garbage-day.lsp').start() -- restart previously stopped clients
+<
+------------------------------------------------------------------------------
+*GarbageDay-faq*
+# FAQ ~
+
+- Can I manually trigger garbage collection? Yes: >lua
+require('garbage-day.lsp').stop()  -- stop all LSP clients.
+require('garbage-day.lsp').start() -- restart them.
+<
+
+vim:tw=78:ts=8:noet:ft=help:norl:
