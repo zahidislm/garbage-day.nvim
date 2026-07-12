@@ -23,6 +23,9 @@ local debounce_timer = assert(vim.uv.new_timer())
 
 local state = { stopped = false, waking_up = false }
 
+---@type string
+local current_filetype
+
 ---@return GarbageDay.Config
 local function cfg()
   return vim.g.garbage_day_config
@@ -60,9 +63,6 @@ function M.on_focus_gained()
   end, cfg().wakeup_delay)
 end
 
----@type string
-local current_filetype
-
 function M.on_buf_enter(args)
   local c = cfg()
   if not c.aggressive_mode then
@@ -71,15 +71,17 @@ function M.on_buf_enter(args)
 
   local ft = vim.bo[args.buf].filetype
   local buftype = vim.bo[args.buf].buftype
+  local changed = current_filetype and ft ~= current_filetype
+  current_filetype = ft
+
   if vim.tbl_contains(c.aggressive_mode_ignore.filetype, ft) then
     return
   end
+
   if vim.tbl_contains(c.aggressive_mode_ignore.buftype, buftype) then
     return
   end
 
-  local changed = ft ~= current_filetype
-  current_filetype = ft
   if not changed then
     return
   end
@@ -107,7 +109,6 @@ end
 ---@param opts? table
 function M.setup(opts)
   require("garbage-day.config").set(opts)
-  current_filetype = vim.bo.filetype
 end
 
 return M
